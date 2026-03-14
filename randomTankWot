@@ -1,0 +1,119 @@
+import requests
+import secrets
+from typing import List, Dict, Any
+
+API_KEY = "wot_api_key"
+NICKNAME = "YourWorldOfTanksName"
+REGION = "eu"
+MIN_TIER = 8
+MAX_TIER = 11
+HISTORY_SIZE = 10
+
+BASE_URL = f"https://api.worldoftanks.{REGION}/wot"
+last_played: List[int] = []
+
+# --- Get account ID ---
+resp = requests.get(
+    f"{BASE_URL}/account/list/",
+    params={"application_id": API_KEY, "search": NICKNAME, "limit": 1}
+).json()
+
+if resp.get("status") != "ok" or not resp.get("data"):
+    print("❌ Player not found.")
+    exit()
+
+account_id = resp["data"][0]["account_id"]
+print(f"Account ID: {account_id}")
+
+# ── Get REAL personal tank statistics ──
+resp = requests.get(
+    f"{BASE_URL}/tanks/stats/",
+    params={
+        "application_id": API_KEY,
+        "account_id": account_id,
+        # "extra": "random.",           # uneori ajută la mai multe date, dar nu e obligatoriu
+        # "fields": ",".join(["tank_id", "all.battles", "all.wins"])  # poți limita răspunsul
+    }
+).json()
+
+if resp.get("status") != "ok" or not resp.get("data"):
+    print("❌ No tank stats available.")
+    exit()
+
+tank_data = resp["data"].get(str(account_id), [])
+if not tank_data:
+    print("❌ No tanks with statistics found.")
+    exit()
+
+# Prepare stats for weighted random
+tank_stats: List[Dict[str, Any]] = []
+for entry in tank_data:
+    stats_all = entry.get("all", {})
+    battles = stats_all.get("battles", 0)
+    if battles == 0:
+        continue  # skip tanks never played (or stats not loaded)
+
+    wins = stats_all.get("wins", 0)
+    winrate = (wins / battles * 100) if battles > 0 else 0.0
+
+    tank_stats.append({
+        "tank_id": entry["tank_id"],
+        "battles": battles,
+        "wins": wins,
+        "winrate": winrate
+    })
+
+if not tank_stats:
+    print("❌ No tanks with battles > 0.")
+    exit()
+
+print(f"Found {len(tank_stats)} tanks with actual battles.")
+
+# ── Pick tank weighted inversely by winrate, then check tier ──
+def pick_tank_weighted() -> Dict[str, Any]:
+    while True:
+        # Exclude recently played
+        available = [t for t in tank_stats if t["tank_id"] not in last_played]
+        if not available:
+            available = tank_stats[:]  # reset if all were played recently
+
+        # Weights: higher weight = lower winrate (we want to improve weak tanks)
+        weights = [max(100 - t["winrate"], 1) for t in available]  # avoid 0 weight
+        total = sum(weights)
+
+        # secrets.randbelow → crypto-safe
+        r = secrets.randbelow(int(total * 1000)) / 1000.0
+        upto = 0.0
+
+        for tank, weight in zip(available, weights):
+            upto += weight
+            if upto >= r:
+                # Get vehicle info (tier, name, type, nation)
+                v_resp = requests.get(
+                    f"{BASE_URL}/encyclopedia/vehicles/",
+                    params={"application_id": API_KEY, "tank_id": tank["tank_id"]}
+                ).json()
+
+                if v_resp.get("status") != "ok" or "data" not in v_resp:
+                    continue
+
+                vehicle = v_resp["data"].get(str(tank["tank_id"]), {})
+                tier = vehicle.get("tier", 0)
+
+                if MIN_TIER <= tier <= MAX_TIER:
+                    last_played.append(tank["tank_id"])
+                    if len(last_played) > HISTORY_SIZE:
+                        last_played.pop(0)
+                    return {**tank, **vehicle}
+
+                # If tier not in range → loop again (pick another)
+                break
+
+chosen = pick_tank_weighted()
+
+print("\n🎲 Random Tank (weighted by inverse personal winrate)")
+print(f"Name    : {chosen.get('name', 'Unknown')}")
+print(f"Tier    : {chosen.get('tier', 'Unknown')}")
+print(f"Type    : {chosen.get('type', 'Unknown')}")
+print(f"Nation  : {chosen.get('nation', 'Unknown')}")
+print(f"Battles : {chosen['battles']}, Wins: {chosen['wins']}, Winrate: {chosen['winrate']:.2f}%")
