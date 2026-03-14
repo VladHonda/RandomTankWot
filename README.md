@@ -1,5 +1,5 @@
 # RandomTankWot
-When you don't know what tank to play. Run this and it will show what tank to play and the winrate.
+When you don't know what tank to play. Run this and it will show what tank to play with the winrate below 50% so you have a chance to fix your winrate and not wreck the winrate of other tanks.
 
 You only need to get your World of Tanks Api key and also your ingame name.
 
