@@ -2,8 +2,8 @@ import requests
 import secrets
 from typing import List, Dict, Any
 
-API_KEY = "wot_api_key"
-NICKNAME = "YourWorldOfTanksName"
+API_KEY = "50c06a756c3320f7dacf0db981cee110"
+NICKNAME = "SpurcatuI"
 REGION = "eu"
 MIN_TIER = 8
 MAX_TIER = 11
@@ -56,12 +56,13 @@ for entry in tank_data:
     wins = stats_all.get("wins", 0)
     winrate = (wins / battles * 100) if battles > 0 else 0.0
 
-    tank_stats.append({
-        "tank_id": entry["tank_id"],
-        "battles": battles,
-        "wins": wins,
-        "winrate": winrate
-    })
+    if winrate < 50:  # only keep tanks below 50%
+        tank_stats.append({
+            "tank_id": entry["tank_id"],
+            "battles": battles,
+            "wins": wins,
+            "winrate": winrate
+        })
 
 if not tank_stats:
     print("❌ No tanks with battles > 0.")
